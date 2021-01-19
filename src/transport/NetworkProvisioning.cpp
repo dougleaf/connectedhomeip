@@ -18,7 +18,7 @@
 #include <core/CHIPEncoding.h>
 #include <core/CHIPSafeCasts.h>
 #include <platform/internal/DeviceNetworkInfo.h>
-#include <protocols/CHIPProtocols.h>
+#include <protocols/Protocols.h>
 #include <support/CodeUtils.h>
 #include <support/ErrorStr.h>
 #include <support/SafeInt.h>
@@ -26,54 +26,34 @@
 
 #if CONFIG_DEVICE_LAYER
 #include <platform/CHIPDeviceLayer.h>
+#if defined(CHIP_DEVICE_LAYER_TARGET)
+#define DEVICENETWORKPROVISIONING_HEADER <platform/CHIP_DEVICE_LAYER_TARGET/DeviceNetworkProvisioningDelegateImpl.h>
+#include DEVICENETWORKPROVISIONING_HEADER
+#endif
 #endif
 
 namespace chip {
 
-void NetworkProvisioning::Init(NetworkProvisioningDelegate * delegate, DeviceNetworkProvisioningDelegate * deviceDelegate)
+void NetworkProvisioning::Init(NetworkProvisioningDelegate * delegate)
 {
-    if (mDelegate != nullptr)
-    {
-        mDelegate->Release();
-    }
-
-    if (delegate != nullptr)
-    {
-        mDelegate = delegate->Retain();
-    }
-
-    if (mDeviceDelegate != nullptr)
-    {
-        mDeviceDelegate->Release();
-    }
-
-    if (deviceDelegate != nullptr)
-    {
-        mDeviceDelegate = deviceDelegate->Retain();
+    mDelegate = delegate;
 #if CONFIG_DEVICE_LAYER
-        DeviceLayer::PlatformMgr().AddEventHandler(ConnectivityHandler, reinterpret_cast<intptr_t>(this));
+#if defined(CHIP_DEVICE_LAYER_TARGET)
+    DeviceLayer::PlatformMgr().AddEventHandler(ConnectivityHandler, reinterpret_cast<intptr_t>(this));
 #endif
-    }
+#endif
 }
 
 NetworkProvisioning::~NetworkProvisioning()
 {
-    if (mDeviceDelegate != nullptr)
-    {
-        mDeviceDelegate->Release();
-
 #if CONFIG_DEVICE_LAYER
-        DeviceLayer::PlatformMgr().RemoveEventHandler(ConnectivityHandler, reinterpret_cast<intptr_t>(this));
+#if defined(CHIP_DEVICE_LAYER_TARGET)
+    DeviceLayer::PlatformMgr().RemoveEventHandler(ConnectivityHandler, reinterpret_cast<intptr_t>(this));
 #endif
-    }
-
-    if (mDelegate != nullptr)
-    {
-        mDelegate->Release();
-    }
+#endif
 }
 
-CHIP_ERROR NetworkProvisioning::HandleNetworkProvisioningMessage(uint8_t msgType, System::PacketBuffer * msgBuf)
+CHIP_ERROR NetworkProvisioning::HandleNetworkProvisioningMessage(uint8_t msgType, const System::PacketBufferHandle & msgBuf)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
 
@@ -89,9 +69,7 @@ CHIP_ERROR NetworkProvisioning::HandleNetworkProvisioningMessage(uint8_t msgType
         size_t len             = msgBuf->DataLength();
         size_t offset          = 0;
 
-        ChipLogProgress(NetworkProvisioning, "Received kWiFiAssociationRequest. DeviceDelegate %p\n", mDeviceDelegate);
-
-        VerifyOrExit(mDeviceDelegate != nullptr, err = CHIP_ERROR_INCORRECT_STATE);
+        ChipLogProgress(NetworkProvisioning, "Received kWiFiAssociationRequest.\n");
 
         err = DecodeString(&buffer[offset], len - offset, bbufSSID, offset);
         // TODO: Check for the error once network provisioning is moved to delegate calls
@@ -99,13 +77,22 @@ CHIP_ERROR NetworkProvisioning::HandleNetworkProvisioningMessage(uint8_t msgType
         err = DecodeString(&buffer[offset], len - offset, bbufPW, offset);
         // TODO: Check for the error once network provisioning is moved to delegate calls
 
-        mDeviceDelegate->ProvisionNetwork(SSID, passwd);
-        err = CHIP_NO_ERROR;
+#if CONFIG_DEVICE_LAYER
+#if defined(CHIP_DEVICE_LAYER_TARGET)
+        DeviceLayer::DeviceNetworkProvisioningDelegateImpl deviceDelegate;
+        err = deviceDelegate.ProvisionWiFi(SSID, passwd);
+#endif
+#endif
     }
     break;
 
+    case NetworkProvisioning::MsgTypes::kThreadAssociationRequest:
+        ChipLogProgress(NetworkProvisioning, "Received kThreadAssociationRequest");
+        err = DecodeThreadAssociationRequest(msgBuf);
+        break;
+
     case NetworkProvisioning::MsgTypes::kIPAddressAssigned: {
-        ChipLogProgress(NetworkProvisioning, "Received kIPAddressAssigned\n");
+        ChipLogProgress(NetworkProvisioning, "Received kIPAddressAssigned");
         if (!Inet::IPAddress::FromString(Uint8::to_const_char(msgBuf->Start()), msgBuf->DataLength(), mDeviceAddress))
         {
             ExitNow(err = CHIP_ERROR_INVALID_ADDRESS);
@@ -144,7 +131,7 @@ CHIP_ERROR NetworkProvisioning::EncodeString(const char * str, BufBound & bbuf)
     uint16_t u16len = static_cast<uint16_t>(length);
     VerifyOrExit(CanCastTo<uint16_t>(length), err = CHIP_ERROR_INVALID_ARGUMENT);
 
-    bbuf.PutLE16(u16len);
+    bbuf.Put16(u16len);
     bbuf.Put(str);
 
 exit:
@@ -163,7 +150,7 @@ CHIP_ERROR NetworkProvisioning::DecodeString(const uint8_t * input, size_t input
     VerifyOrExit(input_len - consumed >= length, err = CHIP_ERROR_BUFFER_TOO_SMALL);
     bbuf.Put(&input[consumed], length);
 
-    consumed += bbuf.Written();
+    consumed += bbuf.Needed();
     bbuf.Put('\0');
 
     VerifyOrExit(bbuf.Fit(), err = CHIP_ERROR_BUFFER_TOO_SMALL);
@@ -174,10 +161,10 @@ exit:
 
 CHIP_ERROR NetworkProvisioning::SendIPAddress(const Inet::IPAddress & addr)
 {
-    CHIP_ERROR err                = CHIP_NO_ERROR;
-    System::PacketBuffer * buffer = System::PacketBuffer::New();
-    char * addrStr                = addr.ToString(Uint8::to_char(buffer->Start()), buffer->AvailableDataLength());
-    size_t addrLen                = 0;
+    CHIP_ERROR err                    = CHIP_NO_ERROR;
+    System::PacketBufferHandle buffer = System::PacketBuffer::New();
+    char * addrStr                    = addr.ToString(Uint8::to_char(buffer->Start()), buffer->AvailableDataLength());
+    size_t addrLen                    = 0;
 
     ChipLogProgress(NetworkProvisioning, "Sending IP Address. Delegate %p\n", mDelegate);
     VerifyOrExit(mDelegate != nullptr, err = CHIP_ERROR_INCORRECT_STATE);
@@ -188,46 +175,157 @@ CHIP_ERROR NetworkProvisioning::SendIPAddress(const Inet::IPAddress & addr)
     VerifyOrExit(CanCastTo<uint16_t>(addrLen), err = CHIP_ERROR_INVALID_ARGUMENT);
     buffer->SetDataLength(static_cast<uint16_t>(addrLen));
 
-    err = mDelegate->SendSecureMessage(Protocols::kChipProtocol_NetworkProvisioning,
-                                       NetworkProvisioning::MsgTypes::kIPAddressAssigned, buffer);
+    err = mDelegate->SendSecureMessage(Protocols::kProtocol_NetworkProvisioning, NetworkProvisioning::MsgTypes::kIPAddressAssigned,
+                                       std::move(buffer));
     SuccessOrExit(err);
 
 exit:
     if (CHIP_NO_ERROR != err)
-    {
         ChipLogError(NetworkProvisioning, "Failed in sending IP address. error %s\n", ErrorStr(err));
-        System::PacketBuffer::Free(buffer);
-    }
     return err;
 }
 
 CHIP_ERROR NetworkProvisioning::SendNetworkCredentials(const char * ssid, const char * passwd)
 {
-    CHIP_ERROR err                = CHIP_NO_ERROR;
-    System::PacketBuffer * buffer = System::PacketBuffer::New();
+    CHIP_ERROR err                    = CHIP_NO_ERROR;
+    System::PacketBufferHandle buffer = System::PacketBuffer::New();
     BufBound bbuf(buffer->Start(), buffer->AvailableDataLength());
 
     ChipLogProgress(NetworkProvisioning, "Sending Network Creds. Delegate %p\n", mDelegate);
     VerifyOrExit(mDelegate != nullptr, err = CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrExit(!buffer.IsNull(), err = CHIP_ERROR_NO_MEMORY);
     SuccessOrExit(EncodeString(ssid, bbuf));
     SuccessOrExit(EncodeString(passwd, bbuf));
     VerifyOrExit(bbuf.Fit(), err = CHIP_ERROR_BUFFER_TOO_SMALL);
 
-    VerifyOrExit(CanCastTo<uint16_t>(bbuf.Written()), err = CHIP_ERROR_INVALID_ARGUMENT);
-    buffer->SetDataLength(static_cast<uint16_t>(bbuf.Written()));
+    VerifyOrExit(CanCastTo<uint16_t>(bbuf.Needed()), err = CHIP_ERROR_INVALID_ARGUMENT);
+    buffer->SetDataLength(static_cast<uint16_t>(bbuf.Needed()));
 
-    err = mDelegate->SendSecureMessage(Protocols::kChipProtocol_NetworkProvisioning,
-                                       NetworkProvisioning::MsgTypes::kWiFiAssociationRequest, buffer);
+    err = mDelegate->SendSecureMessage(Protocols::kProtocol_NetworkProvisioning,
+                                       NetworkProvisioning::MsgTypes::kWiFiAssociationRequest, std::move(buffer));
     SuccessOrExit(err);
 
 exit:
     if (CHIP_NO_ERROR != err)
-    {
         ChipLogError(NetworkProvisioning, "Failed in sending Network Creds. error %s\n", ErrorStr(err));
-        System::PacketBuffer::Free(buffer);
-    }
     return err;
 }
+
+CHIP_ERROR NetworkProvisioning::SendThreadCredentials(const DeviceLayer::Internal::DeviceNetworkInfo & threadData)
+{
+    CHIP_ERROR err                    = CHIP_NO_ERROR;
+    System::PacketBufferHandle buffer = System::PacketBuffer::New();
+
+    ChipLogProgress(NetworkProvisioning, "Sending Thread Credentials");
+    VerifyOrExit(mDelegate != nullptr, err = CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrExit(!buffer.IsNull(), err = CHIP_ERROR_NO_MEMORY);
+
+    {
+        BufBound bbuf(buffer->Start(), buffer->AvailableDataLength());
+        bbuf.Put(threadData.ThreadNetworkName, sizeof(threadData.ThreadNetworkName));
+        bbuf.Put(threadData.ThreadExtendedPANId, sizeof(threadData.ThreadExtendedPANId));
+        bbuf.Put(threadData.ThreadMeshPrefix, sizeof(threadData.ThreadMeshPrefix));
+        bbuf.Put(threadData.ThreadMasterKey, sizeof(threadData.ThreadMasterKey));
+        bbuf.Put(threadData.ThreadPSKc, sizeof(threadData.ThreadPSKc));
+        bbuf.Put16(threadData.ThreadPANId);
+        bbuf.Put(threadData.ThreadChannel);
+        bbuf.Put(static_cast<uint8_t>(threadData.FieldPresent.ThreadExtendedPANId));
+        bbuf.Put(static_cast<uint8_t>(threadData.FieldPresent.ThreadMeshPrefix));
+        bbuf.Put(static_cast<uint8_t>(threadData.FieldPresent.ThreadPSKc));
+
+        VerifyOrExit(bbuf.Fit(), err = CHIP_ERROR_BUFFER_TOO_SMALL);
+        buffer->SetDataLength(static_cast<uint16_t>(bbuf.Needed()));
+
+        err = mDelegate->SendSecureMessage(Protocols::kProtocol_NetworkProvisioning,
+                                           NetworkProvisioning::MsgTypes::kThreadAssociationRequest, std::move(buffer));
+    }
+
+exit:
+    if (CHIP_NO_ERROR != err)
+        ChipLogError(NetworkProvisioning, "Failed to send Thread Credentials: %s", ErrorStr(err));
+    return err;
+}
+
+#ifdef CHIP_ENABLE_OPENTHREAD
+CHIP_ERROR NetworkProvisioning::DecodeThreadAssociationRequest(const System::PacketBufferHandle & msgBuf)
+{
+    CHIP_ERROR err                                       = CHIP_NO_ERROR;
+    DeviceLayer::Internal::DeviceNetworkInfo networkInfo = {};
+    uint8_t * data                                       = msgBuf->Start();
+    size_t dataLen                                       = msgBuf->DataLength();
+
+    VerifyOrExit(dataLen >= sizeof(networkInfo.ThreadNetworkName),
+                 ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    memcpy(networkInfo.ThreadNetworkName, data, sizeof(networkInfo.ThreadNetworkName));
+    data += sizeof(networkInfo.ThreadNetworkName);
+    dataLen -= sizeof(networkInfo.ThreadNetworkName);
+
+    VerifyOrExit(dataLen >= sizeof(networkInfo.ThreadExtendedPANId),
+                 ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    memcpy(networkInfo.ThreadExtendedPANId, data, sizeof(networkInfo.ThreadExtendedPANId));
+    data += sizeof(networkInfo.ThreadExtendedPANId);
+    dataLen -= sizeof(networkInfo.ThreadExtendedPANId);
+
+    VerifyOrExit(dataLen >= sizeof(networkInfo.ThreadMeshPrefix),
+                 ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    memcpy(networkInfo.ThreadMeshPrefix, data, sizeof(networkInfo.ThreadMeshPrefix));
+    data += sizeof(networkInfo.ThreadMeshPrefix);
+    dataLen -= sizeof(networkInfo.ThreadMeshPrefix);
+
+    VerifyOrExit(dataLen >= sizeof(networkInfo.ThreadMasterKey),
+                 ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    memcpy(networkInfo.ThreadMasterKey, data, sizeof(networkInfo.ThreadMasterKey));
+    data += sizeof(networkInfo.ThreadMasterKey);
+    dataLen -= sizeof(networkInfo.ThreadMasterKey);
+
+    VerifyOrExit(dataLen >= sizeof(networkInfo.ThreadPSKc),
+                 ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    memcpy(networkInfo.ThreadPSKc, data, sizeof(networkInfo.ThreadPSKc));
+    data += sizeof(networkInfo.ThreadPSKc);
+    dataLen -= sizeof(networkInfo.ThreadPSKc);
+
+    VerifyOrExit(dataLen >= sizeof(networkInfo.ThreadPANId),
+                 ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    networkInfo.ThreadPANId = Encoding::LittleEndian::Get16(data);
+    data += sizeof(networkInfo.ThreadPANId);
+    dataLen -= sizeof(networkInfo.ThreadPANId);
+
+    VerifyOrExit(dataLen >= sizeof(networkInfo.ThreadChannel),
+                 ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    networkInfo.ThreadChannel = data[0];
+    data += sizeof(networkInfo.ThreadChannel);
+    dataLen -= sizeof(networkInfo.ThreadChannel);
+
+    VerifyOrExit(dataLen >= 3, ChipLogProgress(NetworkProvisioning, "Invalid network provision message"));
+    networkInfo.FieldPresent.ThreadExtendedPANId = *data;
+    data++;
+    networkInfo.FieldPresent.ThreadMeshPrefix = *data;
+    data++;
+    networkInfo.FieldPresent.ThreadPSKc = *data;
+    data++;
+    networkInfo.NetworkId              = 0;
+    networkInfo.FieldPresent.NetworkId = true;
+
+#if CONFIG_DEVICE_LAYER
+    // Start listening for OpenThread changes to be able to respond with SLAAC/On-Mesh IP Address
+    DeviceLayer::PlatformMgr().AddEventHandler(ConnectivityHandler, reinterpret_cast<intptr_t>(this));
+#if defined(CHIP_DEVICE_LAYER_TARGET)
+    {
+        DeviceLayer::DeviceNetworkProvisioningDelegateImpl deviceDelegate;
+        err = deviceDelegate.ProvisionThread(networkInfo);
+    }
+#endif
+#endif
+
+exit:
+    return err;
+}
+#else  // CHIP_ENABLE_OPENTHREAD
+CHIP_ERROR NetworkProvisioning::DecodeThreadAssociationRequest(const System::PacketBufferHandle &)
+{
+    return CHIP_ERROR_INVALID_MESSAGE_TYPE;
+}
+#endif // CHIP_ENABLE_OPENTHREAD
 
 #if CONFIG_DEVICE_LAYER
 void NetworkProvisioning::ConnectivityHandler(const DeviceLayer::ChipDeviceEvent * event, intptr_t arg)
@@ -235,12 +333,23 @@ void NetworkProvisioning::ConnectivityHandler(const DeviceLayer::ChipDeviceEvent
     NetworkProvisioning * session = reinterpret_cast<NetworkProvisioning *>(arg);
 
     VerifyOrExit(session != nullptr, /**/);
-    VerifyOrExit(event->Type == DeviceLayer::DeviceEventType::kInternetConnectivityChange, /**/);
-    VerifyOrExit(event->InternetConnectivityChange.IPv4 == DeviceLayer::kConnectivity_Established, /**/);
 
-    Inet::IPAddress addr;
-    Inet::IPAddress::FromString(event->InternetConnectivityChange.address, addr);
-    (void) session->SendIPAddress(addr);
+    if (event->Type == DeviceLayer::DeviceEventType::kInternetConnectivityChange &&
+        event->InternetConnectivityChange.IPv4 == DeviceLayer::kConnectivity_Established)
+    {
+        Inet::IPAddress addr;
+        Inet::IPAddress::FromString(event->InternetConnectivityChange.address, addr);
+        (void) session->SendIPAddress(addr);
+    }
+
+#if CHIP_DEVICE_CONFIG_ENABLE_THREAD
+    if (event->Type == DeviceLayer::DeviceEventType::kThreadStateChange && event->ThreadStateChange.AddressChanged)
+    {
+        Inet::IPAddress addr;
+        SuccessOrExit(DeviceLayer::ThreadStackMgr().GetSlaacIPv6Address(addr));
+        (void) session->SendIPAddress(addr);
+    }
+#endif
 
 exit:
     return;

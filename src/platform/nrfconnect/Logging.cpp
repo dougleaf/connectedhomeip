@@ -24,6 +24,7 @@
 #include <platform/internal/CHIPDeviceLayerInternal.h>
 #include <support/logging/CHIPLogging.h>
 
+#include <kernel.h>
 #include <logging/log.h>
 
 #include <cstdio>
@@ -33,22 +34,6 @@ using namespace ::chip::DeviceLayer;
 using namespace ::chip::DeviceLayer::Internal;
 
 LOG_MODULE_REGISTER(chip, LOG_LEVEL_DBG);
-
-namespace {
-
-void GetModuleName(char * buf, uint8_t module)
-{
-    if (module == ::chip::Logging::kLogModule_DeviceLayer)
-    {
-        memcpy(buf, "DL", 3);
-    }
-    else
-    {
-        ::chip::Logging::GetModuleName(buf, module);
-    }
-}
-
-} // unnamed namespace
 
 namespace chip {
 namespace DeviceLayer {
@@ -76,14 +61,17 @@ void LogV(uint8_t module, uint8_t category, const char * msg, va_list v)
 
     {
         char formattedMsg[CHIP_DEVICE_CONFIG_LOG_MESSAGE_MAX_SIZE];
-        size_t prefixLen;
+        size_t prefixLen = 0;
 
-        constexpr size_t maxPrefixLen = ChipLoggingModuleNameLen + 3;
+        // Max size for "[TAG] {UINT32}"
+        constexpr size_t maxPrefixLen = ChipLoggingModuleNameLen + 10 + 3;
         static_assert(sizeof(formattedMsg) > maxPrefixLen);
 
+        prefixLen += snprintf(formattedMsg, sizeof(formattedMsg), "%u", k_uptime_get_32());
+
         // Form the log prefix, e.g. "[DL] "
-        formattedMsg[0] = '[';
-        ::GetModuleName(formattedMsg + 1, module);
+        formattedMsg[prefixLen++] = '[';
+        GetModuleName(formattedMsg + prefixLen, module);
         prefixLen                 = strlen(formattedMsg);
         formattedMsg[prefixLen++] = ']';
         formattedMsg[prefixLen++] = ' ';

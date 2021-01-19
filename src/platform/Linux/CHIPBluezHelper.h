@@ -55,6 +55,8 @@
 #include <stdint.h>
 #if CHIP_DEVICE_CONFIG_ENABLE_CHIPOBLE
 
+#include "ble/CHIPBleServiceData.h"
+#include "platform/CHIPDeviceConfig.h"
 #include "platform/Linux/dbus/bluez/DbusBluez.h"
 
 namespace chip {
@@ -74,6 +76,7 @@ namespace Internal {
 
 #define CHIP_PLAT_BLE_UUID_C1_STRING "18ee2ef5-263d-4559-959f-4f9c429f9d11"
 #define CHIP_PLAT_BLE_UUID_C2_STRING "18ee2ef5-263d-4559-959f-4f9c429f9d12"
+#define CHIP_PLAT_BLE_UUID_C3_STRING "64630238-8772-45F2-B87D-748A83218F04"
 
 #define CHIP_BLE_BASE_SERVICE_UUID_STRING "-0000-1000-8000-00805f9b34fb"
 #define CHIP_BLE_SERVICE_PREFIX_LENGTH 8
@@ -160,6 +163,8 @@ struct BluezEndpoint
     BluezGattService1 * mpService;
     BluezGattCharacteristic1 * mpC1;
     BluezGattCharacteristic1 * mpC2;
+    // additional data characteristics
+    BluezGattCharacteristic1 * mpC3;
 
     // map device path to the connection
     GHashTable * mpConnMap;
@@ -167,7 +172,7 @@ struct BluezEndpoint
     bool mIsNotify;
     bool mIsCentral;
     char * mpAdvertisingUUID;
-    CHIPServiceData * mpChipServiceData;
+    chip::Ble::ChipBLEDeviceIdentificationInfo mDeviceIdInfo;
     ChipAdvType mType;  ///< Advertisement type.
     uint16_t mDuration; ///< Advertisement interval (in ms).
     bool mIsAdvertising;
@@ -184,6 +189,9 @@ struct BluezConnection
     BluezGattService1 * mpService;
     BluezGattCharacteristic1 * mpC1;
     BluezGattCharacteristic1 * mpC2;
+    // additional data characteristics
+    BluezGattCharacteristic1 * mpC3;
+
     bool mIsNotify;
     uint16_t mMtu;
     struct IOChannel mC1Channel;
@@ -199,7 +207,7 @@ struct ConnectionDataBundle
 
 CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char * apBleAddr, BLEAdvConfig & aBleAdvConfig, void *& apEndpoint);
 bool BluezRunOnBluezThread(int (*aCallback)(void *), void * apClosure);
-bool SendBluezIndication(BLE_CONNECTION_OBJECT apConn, chip::System::PacketBuffer * apBuf);
+bool SendBluezIndication(BLE_CONNECTION_OBJECT apConn, chip::System::PacketBufferHandle apBuf);
 bool CloseBluezConnection(BLE_CONNECTION_OBJECT apConn);
 CHIP_ERROR StartBluezAdv(BluezEndpoint * apEndpoint);
 CHIP_ERROR StopBluezAdv(BluezEndpoint * apEndpoint);

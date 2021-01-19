@@ -436,18 +436,6 @@
     [self presentViewController:alertController animated:YES completion:nil];
 }
 
-- (void)sendWifiCredentialsWithSSID:(NSString *)ssid password:(NSString *)password
-{
-    NSString * msg = [NSString stringWithFormat:@"::%@:%@:", ssid, password];
-    NSError * error;
-    BOOL didSend = [self.chipController sendMessage:[msg dataUsingEncoding:NSUTF8StringEncoding] error:&error];
-    if (!didSend) {
-        NSLog(@"Error: %@", error.localizedDescription);
-    } else {
-        NSLog(@"Message Sent");
-    }
-}
-
 - (void)updateUIFields:(CHIPSetupPayload *)payload decimalString:(nullable NSString *)decimalString
 {
     if (decimalString) {
@@ -510,7 +498,6 @@
 - (void)handleRendezVous:(CHIPSetupPayload *)payload
 {
     switch (payload.rendezvousInformation) {
-    case kRendezvousInformationNone:
     case kRendezvousInformationThread:
     case kRendezvousInformationEthernet:
     case kRendezvousInformationAllMask:
@@ -520,6 +507,7 @@
         NSLog(@"Rendezvous Wi-Fi");
         [self handleRendezVousWiFi:[self getNetworkName:payload.discriminator]];
         break;
+    case kRendezvousInformationNone:
     case kRendezvousInformationBLE:
         NSLog(@"Rendezvous BLE");
         [self handleRendezVousBLE:payload.discriminator.unsignedShortValue setupPINCode:payload.setUpPINCode.unsignedIntValue];
@@ -537,7 +525,10 @@
 - (void)handleRendezVousBLE:(uint16_t)discriminator setupPINCode:(uint32_t)setupPINCode
 {
     NSError * error;
-    [self.chipController connect:discriminator setupPINCode:setupPINCode error:&error];
+    uint64_t deviceID = CHIPGetNextAvailableDeviceID();
+    [self.chipController pairDevice:deviceID discriminator:discriminator setupPINCode:setupPINCode error:&error];
+    deviceID++;
+    CHIPSetNextAvailableDeviceID(deviceID);
 }
 
 - (void)handleRendezVousWiFi:(NSString *)name

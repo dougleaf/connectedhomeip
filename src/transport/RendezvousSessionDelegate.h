@@ -18,6 +18,9 @@
 #pragma once
 
 #include <core/CHIPCore.h>
+#include <platform/internal/DeviceNetworkInfo.h>
+#include <transport/raw/MessageHeader.h>
+#include <transport/raw/PeerAddress.h>
 
 namespace chip {
 
@@ -38,16 +41,19 @@ public:
     virtual void OnRendezvousConnectionClosed() {}
     virtual void OnRendezvousError(CHIP_ERROR err) {}
     virtual void OnRendezvousComplete() {}
-    virtual void OnRendezvousMessageReceived(System::PacketBuffer * buffer) = 0;
-
+    virtual void OnRendezvousMessageReceived(const PacketHeader & packetHeader, const Transport::PeerAddress & peerAddress,
+                                             System::PacketBufferHandle buffer){};
     virtual void OnRendezvousStatusUpdate(Status status, CHIP_ERROR err) {}
 };
 
 class DLL_EXPORT RendezvousDeviceCredentialsDelegate
 {
 public:
-    virtual void SendNetworkCredentials(const char * ssid, const char * passwd) = 0;
-    virtual void SendOperationalCredentials()                                   = 0;
+    virtual ~RendezvousDeviceCredentialsDelegate() {}
+
+    virtual void SendNetworkCredentials(const char * ssid, const char * passwd)          = 0;
+    virtual void SendThreadCredentials(const DeviceLayer::Internal::DeviceNetworkInfo &) = 0;
+    virtual void SendOperationalCredentials()                                            = 0;
 };
 
 } // namespace chip

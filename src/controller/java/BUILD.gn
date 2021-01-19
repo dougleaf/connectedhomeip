@@ -27,6 +27,8 @@ shared_library("jni") {
     "AndroidBleConnectionDelegate.h",
     "AndroidBlePlatformDelegate.cpp",
     "AndroidBlePlatformDelegate.h",
+    "AndroidDeviceControllerWrapper.cpp",
+    "AndroidDeviceControllerWrapper.h",
     "CHIPDeviceController-JNI.cpp",
   ]
 
@@ -38,7 +40,10 @@ shared_library("jni") {
 android_library("java") {
   output_name = "CHIPController.jar"
 
-  data_deps = [ ":jni" ]
+  data_deps = [
+    ":jni",
+    "//build/chip/java:shared_cpplib",
+  ]
 
   sources = [
     "src/chip/devicecontroller/AndroidChipStack.java",

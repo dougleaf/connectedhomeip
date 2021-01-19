@@ -30,6 +30,9 @@
 
 // Include the non-inline definitions for the GenericPlatformManagerImpl<> template,
 // from which the GenericPlatformManagerImpl_POSIX<> template inherits.
+#if CHIP_ENABLE_MDNS
+#include <platform/Linux/MdnsImpl.h>
+#endif
 #include <platform/internal/GenericPlatformManagerImpl.cpp>
 
 #include <system/SystemLayer.h>
@@ -138,6 +141,9 @@ void GenericPlatformManagerImpl_POSIX<ImplClass>::SysUpdate()
         InetLayer.PrepareSelect(mMaxFd, &mReadSet, &mWriteSet, &mErrorSet, mNextTimeout);
     }
 #endif // !(CHIP_SYSTEM_CONFIG_USE_NETWORK_FRAMEWORK)
+#if CHIP_ENABLE_MDNS
+    chip::Mdns::UpdateMdnsDataset(mReadSet, mWriteSet, mErrorSet, mMaxFd, mNextTimeout);
+#endif
 }
 
 template <class ImplClass>
@@ -147,7 +153,6 @@ void GenericPlatformManagerImpl_POSIX<ImplClass>::SysProcess()
     int64_t nextTimeoutMs;
 
     nextTimeoutMs = mNextTimeout.tv_sec * 1000 + mNextTimeout.tv_usec / 1000;
-    ChipLogDetail(DeviceLayer, "Timer: " PRId64, nextTimeoutMs);
     _StartChipTimer(nextTimeoutMs);
 
     Impl()->UnlockChipStack();
@@ -173,6 +178,9 @@ void GenericPlatformManagerImpl_POSIX<ImplClass>::SysProcess()
 #endif // !(CHIP_SYSTEM_CONFIG_USE_NETWORK_FRAMEWORK)
 
     ProcessDeviceEvents();
+#if CHIP_ENABLE_MDNS
+    chip::Mdns::ProcessMdns(mReadSet, mWriteSet, mErrorSet);
+#endif
 }
 
 template <class ImplClass>
@@ -221,6 +229,7 @@ CHIP_ERROR GenericPlatformManagerImpl_POSIX<ImplClass>::_Shutdown()
     mShouldRunEventLoop.store(false, std::memory_order_relaxed);
     if (mChipTask)
     {
+        SystemLayer.WakeSelect();
         SuccessOrExit(err = pthread_join(mChipTask, nullptr));
     }
 

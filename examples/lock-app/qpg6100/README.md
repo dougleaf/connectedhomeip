@@ -15,7 +15,7 @@ An example application showing the use
 
 ## Introduction
 
-![QPG6100 DK board](../../platform/qpg6100/doc/images/QPG6100_DK_Board.jpg)
+![QPG6100 DK board](../../platform/qpg6100/doc/QPG6100_DK_Board.jpg)
 
 The QPG6100 Lock shows an implementation of a Door Lock device, based on CHIP
 and the Qorvo QPG6100 SDK. Intention of this example is to demonstrate a CHIP
@@ -26,18 +26,19 @@ with separate updates.
 
 Current status of implementation:
 
+-   Button and LED control
 -   Initialization of the CHIP stack.
 -   CHIP Logging, PlatformManager and ConfigurationManager enabled.
+-   BLE: CHIPoBLE advertisement and connection available for provisioning
+-   CHIP ZCL cluster control for the Lock mechanism through CHIP tool.
 
 Pending:
 
--   Button and LED control
--   BLE: Addition of CHIPoBLE to enable provisioning
 -   Thread: Linking QPG6100 OpenThread implementation to CHIP build
--   Intake CHIP ZCL cluster control for the Lock mechanism through CHIP tool.
 
 For more information on Qorvo and the platforms, please visit
-[the Qorvo website](www.qorvo.com) or contact us on LPW.support@qorvo.com.
+[the Qorvo website](http://www.qorvo.com) or contact us on
+LPW.support@qorvo.com.
 
 ## Building
 

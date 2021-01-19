@@ -15,23 +15,26 @@
 #
 cmake_minimum_required(VERSION 3.13.1)
 
+get_filename_component(CHIP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip REALPATH)
 get_filename_component(APP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/.. REALPATH)
-get_filename_component(CHIP_ROOT ${APP_ROOT}/third_party/connectedhomeip REALPATH)
 
-list(INSERT OVERLAY_CONFIG 0 ${CHIP_ROOT}/config/nrfconnect/overlay-sample-defaults.conf)
+set(CONF_FILE ${CHIP_ROOT}/config/nrfconnect/app/sample-defaults.conf prj.conf)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CHIP_ROOT}/config/nrfconnect/)
-include(nrfconnect-app)
+include(${CHIP_ROOT}/config/nrfconnect/app/app.cmake)
 
 project(chip-nrf52840-shell-example)
-target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${APP_ROOT}/shell_common/include)
+
+target_include_directories(app PRIVATE
+                           ${CMAKE_CURRENT_SOURCE_DIR}
+                           ${APP_ROOT}/shell_common/include)
+
 target_sources(app PRIVATE
     ${APP_ROOT}/shell_common/cmd_base64.cpp
     ${APP_ROOT}/shell_common/cmd_device.cpp
     ${APP_ROOT}/shell_common/cmd_misc.cpp
     ${APP_ROOT}/shell_common/cmd_otcli.cpp
     ${APP_ROOT}/shell_common/cmd_btp.cpp
-    ${APP_ROOT}/main.cpp
+    ${APP_ROOT}/standalone/main.cpp
 )
 
 # 1) The example needs be linked with openthread command line interpreter (required by cmd_otcli.cpp)

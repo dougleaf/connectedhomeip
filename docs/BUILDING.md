@@ -43,7 +43,7 @@ On Debian-based Linux distributions such as Ubuntu, these dependencies can be
 satisfied with the following:
 
 ```
-sudo apt-get install git gcc g++ python pkg-config libssl-dev libdbus-1-dev libglib2.0-dev ninja-build python3-venv python3-dev unzip
+sudo apt-get install git gcc g++ python pkg-config libssl-dev libdbus-1-dev libglib2.0-dev libavahi-client-dev ninja-build python3-venv python3-dev unzip
 ```
 
 #### How to install prerequisites on macOS
@@ -76,6 +76,14 @@ server OS for arm64 architectures on a micro SD card.
 
 Boot the SD card, login with the default user account "ubuntu" and password
 "ubuntu", then proceed with "How to install prerequisites on Linux".
+
+Finally, install some Raspberry Pi specific dependencies:
+
+```
+sudo apt-get install pi-bluetooth
+```
+
+You need to reboot your RPi after install `pi-bluetooth`.
 
 ### Build Preparation
 
@@ -206,7 +214,7 @@ expensive to build everything for every edit. To save time, you can name the
 configuration to build:
 
 ```
-ninja -C out/unified all_host_gcc
+ninja -C out/unified host_gcc
 ninja -C out/unified check_host_gcc
 ```
 
@@ -230,12 +238,12 @@ gn desc out/unified '//src/controller(//build/toolchain/host:linux_x64_clang)'
 ```
 
 Note: Some builds are disabled by default as they need extra SDKs. For example,
-to add the nRF5 examples to the unified build, download the
-[Nordic nRF5 SDK for Thread and Zigbee](https://www.nordicsemi.com/Software-and-Tools/Software/nRF5-SDK-for-Thread-and-Zigbee)
-and add the following build arguments:
+to add the EFR32 examples to the unified build, download the
+[SDK](https://github.com/SiliconLabs/sdk_support) and add the following build
+arguments:
 
 ```
-gn gen out/unified --args='target_os="all" enable_nrf5_builds=true nrf5_sdk_root="/path/to/sdk"'
+gn gen out/unified --args='target_os="all" enable_efr32_builds=true efr32_sdk_root="/path/to/sdk" efr32_board="BRD4161A"'
 ```
 
 ### Getting Help

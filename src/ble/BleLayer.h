@@ -66,8 +66,6 @@
 namespace chip {
 namespace Ble {
 
-using ::chip::System::PacketBuffer;
-
 /**
  *  @def NUM_SUPPORTED_PROTOCOL_VERSIONS
  *
@@ -154,9 +152,9 @@ public:
     void SetSupportedProtocolVersion(uint8_t index, uint8_t version);
 
     /// Must be able to reserve 20 byte data length in msgBuf.
-    BLE_ERROR Encode(PacketBuffer * msgBuf) const;
+    BLE_ERROR Encode(const System::PacketBufferHandle & msgBuf) const;
 
-    static BLE_ERROR Decode(const PacketBuffer & msgBuf, BleTransportCapabilitiesRequestMessage & msg);
+    static BLE_ERROR Decode(const System::PacketBufferHandle & msgBuf, BleTransportCapabilitiesRequestMessage & msg);
 };
 
 class BleTransportCapabilitiesResponseMessage
@@ -188,9 +186,9 @@ public:
     uint8_t mWindowSize;
 
     /// Must be able to reserve 20 byte data length in msgBuf.
-    BLE_ERROR Encode(PacketBuffer * msgBuf) const;
+    BLE_ERROR Encode(const System::PacketBufferHandle & msgBuf) const;
 
-    static BLE_ERROR Decode(const PacketBuffer & msgBuf, BleTransportCapabilitiesResponseMessage & msg);
+    static BLE_ERROR Decode(const System::PacketBufferHandle & msgBuf, BleTransportCapabilitiesResponseMessage & msg);
 };
 
 /**
@@ -298,11 +296,11 @@ public:
 
     /// Call when a GATT write request is received.
     bool HandleWriteReceived(BLE_CONNECTION_OBJECT connObj, const ChipBleUUID * svcId, const ChipBleUUID * charId,
-                             PacketBuffer * pBuf);
+                             System::PacketBufferHandle pBuf);
 
     /// Call when a GATT indication is received.
     bool HandleIndicationReceived(BLE_CONNECTION_OBJECT connObj, const ChipBleUUID * svcId, const ChipBleUUID * charId,
-                                  PacketBuffer * pBuf);
+                                  System::PacketBufferHandle pBuf);
 
     /// Call when an outstanding GATT write request receives a positive receipt confirmation.
     bool HandleWriteConfirmation(BLE_CONNECTION_OBJECT connObj, const ChipBleUUID * svcId, const ChipBleUUID * charId);
@@ -336,6 +334,8 @@ private:
     static const ChipBleUUID CHIP_BLE_CHAR_1_ID;
     // UUID of CHIP service characteristic used for peripheral indications.
     static const ChipBleUUID CHIP_BLE_CHAR_2_ID;
+    // UUID of CHIP service characteristic used for additional data
+    static const ChipBleUUID CHIP_BLE_CHAR_3_ID;
 
     BleConnectionDelegate * mConnectionDelegate;
     BlePlatformDelegate * mPlatformDelegate;
@@ -343,10 +343,9 @@ private:
     chip::System::Layer * mSystemLayer;
 
     // Private functions:
-    void HandleDataReceived(BLE_CONNECTION_OBJECT connObj, PacketBuffer * pBuf);
     void HandleAckReceived(BLE_CONNECTION_OBJECT connObj);
     void DriveSending();
-    BLE_ERROR HandleBleTransportConnectionInitiated(BLE_CONNECTION_OBJECT connObj, PacketBuffer * pBuf);
+    BLE_ERROR HandleBleTransportConnectionInitiated(BLE_CONNECTION_OBJECT connObj, System::PacketBufferHandle pBuf);
 
     static BleTransportProtocolVersion GetHighestSupportedProtocolVersion(const BleTransportCapabilitiesRequestMessage & reqMsg);
 };

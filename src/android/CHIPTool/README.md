@@ -1,71 +1,65 @@
-This directory contains an Android Studio project for CHIPTool.
+# Android CHIPTool
 
-CHIPTool features: Scan a CHIP QR code and display payload information to the
-user Send echo requests to the CHIP echo server Send on/off cluster requests to
-a CHIP device
+This directory contains the Android Studio project for CHIPTool, an Android
+application for commissioning and controlling CHIP accessories.
 
--   Connection to the chip device's soft AP will be a manual step until pairing
-    is implemented.
+CHIPTool offers the following features:
 
-# Steps to build CHIP for Android apps
+-   Scan a CHIP QR code and display payload information to the user
+-   Read the NFC tag containing CHIP onboarding information
+-   Commission a CHIP device
+-   Send echo requests to the CHIP echo server
+-   Send on/off cluster requests to a CHIP device
 
-Pre-conditions: Have Android SDK & NDK downloaded to your machine. Set the
-\$ANDROID_HOME environment variable to where the SDK is downloaded and the
-\$ANDROID_NDK_HOME environment variable to point to the NDK package is
+> :warning: Connection to the CHIP device's soft AP will be a manual step until
+> pairing is implemented.
+
+## Requirements for building
+
+You need Android SDK 21 & NDK downloaded to your machine. Set the
+`$ANDROID_HOME` environment variable to where the SDK is downloaded and the
+`$ANDROID_NDK_HOME` environment variable to point to where the NDK package is
 downloaded.
 
-Make sure that JAVA_HOME is set to the correct path.
+## ABIs and TARGET_CPU
 
-ABIs and corresponding values for `target_cpu`
+`TARGET_CPU` can have the following values, depending on your smartphone CPU
+architecture:
 
-| ABI         | target_cpu |
+| ABI         | TARGET_CPU |
 | ----------- | ---------- |
 | armeabi-v7a | arm        |
 | arm64-v8a   | arm64      |
 | x86         | x86        |
-| x86-64      | x64        |
+| x86_64      | x64        |
 
-1. Checkout the CHIP repo
+## Building CHIPTool
 
-2. In commandline / Terminal, 'cd' into the top CHIP directory and run
+Complete the following steps to build CHIPTool:
 
-    ```shell
-    source scripts/activate.sh
-    gn gen out/android_arm64 --args="target_os=\"android\" target_cpu=\"arm64\" android_ndk_root=\"${ANDROID_NDK_HOME}\" android_sdk_root=\"${ANDROID_HOME}\""
-    ninja -C out/android_arm64 src/setup_payload/java src/controller/java
-    ```
+1. Check out the CHIP repository.
 
-    See table above for other values of `target_cpu`.
-
-3. You should see the generated SetupPayloadParser.jar under
-   `out/android_arm64/lib` and libSetupPayloadParser.so under
-   `out/android_arm64/lib/jni/arm64-v8a` in the output directory.
-
-4. Copy the .jar and .so files into the Android project:
-
-```shell
-rsync -a out/android_arm64/lib/*.jar src/android/CHIPTool/app/libs
-rsync -a out/android_arm64/lib/jni/* src/android/CHIPTool/app/src/main/jniLibs
-```
-
-5. Build OT Commissioner
+2. In the command line, run the following command from the top CHIP directory:
 
     ```shell
     sudo apt-get install -y swig # "brew install swig" for macOS.
-
-    git submodule update --init --recursive third_party/ot-commissioner/repo
-    ABI=arm64-v8a API=21 ./third_party/ot-commissioner/build-android-libs.sh
-    ## JAR and .so libraries will be copy to target directories.
+    TARGET_CPU=arm64 ./scripts/examples/android_app.sh
     ```
 
-6. You will also need the "libc++\_shared.so" file in the jniLibs folder. This
-   file comes packaged with Android NDK and can be found under
-   `$ANDROID_NDK_HOME/sources/cxx-stl/llvm-libc++/libs/$TARGET`, e.g.
+    See the table above for other values of `TARGET_CPU`.
 
-    `rsync -a "${ANDROID_NDK_HOME}/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so" src/android/CHIPTool/app/src/main/jniLibs/arm64-v8a/`
+3. Open the project in Android Studio and run **Sync Project with Gradle
+   Files**.
 
-    (Eventually hoping to not have to include this .so, but that needs some more
-    tweaking of the Android automake build rules. Include it in the interim to
-    be able to build the Android app).
+4. Use one of the following options to build an Android package:
 
-7. 'Gradle sync' the Android project and run.
+    - Click **Make Project** in Android Studio.
+    - Run the following command in the command line:
+
+        ```shell
+        cd src/android/CHIPTool
+        ./gradlew build
+        ```
+
+The debug Android package `app-debug.apk` will be generated at
+`./app/build/outputs/apk/debug/`.

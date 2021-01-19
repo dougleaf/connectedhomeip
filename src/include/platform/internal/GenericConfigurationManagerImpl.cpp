@@ -165,7 +165,7 @@ CHIP_ERROR GenericConfigurationManagerImpl<ImplClass>::_GetManufacturerDeviceId(
     err = Impl()->ReadConfigValue(ImplClass::kConfigKey_MfrDeviceId, deviceId);
 
 #if CHIP_DEVICE_CONFIG_ENABLE_TEST_DEVICE_IDENTITY
-    if (err == CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND)
+    if (err == CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND || err == CHIP_ERROR_KEY_NOT_FOUND)
     {
         deviceId = TestDeviceId;
         err      = CHIP_NO_ERROR;
@@ -607,7 +607,16 @@ CHIP_ERROR GenericConfigurationManagerImpl<ImplClass>::_StoreSetupDiscriminator(
 template <class ImplClass>
 CHIP_ERROR GenericConfigurationManagerImpl<ImplClass>::_GetFabricId(uint64_t & fabricId)
 {
-    return Impl()->ReadConfigValue(ImplClass::kConfigKey_FabricId, fabricId);
+    CHIP_ERROR err = Impl()->ReadConfigValue(ImplClass::kConfigKey_FabricId, fabricId);
+
+#if CHIP_DEVICE_CONFIG_ENABLE_TEST_DEVICE_IDENTITY
+    if (err == CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND || err == CHIP_ERROR_KEY_NOT_FOUND)
+    {
+        fabricId = TestFabricId;
+        err      = CHIP_NO_ERROR;
+    }
+#endif // CHIP_DEVICE_CONFIG_ENABLE_TEST_DEVICE_IDENTITY
+    return err;
 }
 
 template <class ImplClass>
@@ -813,6 +822,10 @@ GenericConfigurationManagerImpl<ImplClass>::_GetBLEDeviceIdentificationInfo(Ble:
     deviceIdInfo.PairingStatus = ThreadStackMgr().IsThreadAttached()
         ? Ble::ChipBLEDeviceIdentificationInfo::kPairingStatus_Paired
         : Ble::ChipBLEDeviceIdentificationInfo::kPairingStatus_Unpaired;
+#elif CHIP_DEVICE_CONFIG_ENABLE_WIFI_STATION
+    deviceIdInfo.PairingStatus = ConnectivityMgr().IsWiFiStationConnected()
+        ? Ble::ChipBLEDeviceIdentificationInfo::kPairingStatus_Paired
+        : Ble::ChipBLEDeviceIdentificationInfo::kPairingStatus_Unpaired;
 #else
     deviceIdInfo.PairingStatus = Impl()->_IsPairedToAccount() ? Ble::ChipBLEDeviceIdentificationInfo::kPairingStatus_Paired
                                                               : Ble::ChipBLEDeviceIdentificationInfo::kPairingStatus_Unpaired;
@@ -843,6 +856,10 @@ bool GenericConfigurationManagerImpl<ImplClass>::_IsPairedToAccount()
 template <class ImplClass>
 bool GenericConfigurationManagerImpl<ImplClass>::_IsFullyProvisioned()
 {
+#if CHIP_BYPASS_RENDEZVOUS
+    return true;
+#else // CHIP_BYPASS_RENDEZVOUS
+
     return
 #if CHIP_DEVICE_CONFIG_ENABLE_WIFI_STATION
         ConnectivityMgr().IsWiFiStationProvisioned() &&
@@ -850,13 +867,13 @@ bool GenericConfigurationManagerImpl<ImplClass>::_IsFullyProvisioned()
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
         ConnectivityMgr().IsThreadProvisioned() &&
 #endif
-#if !CHIP_DEVICE_CONFIG_DISABLE_ACCOUNT_PAIRING
-        Impl()->IsPairedToAccount() &&
-#endif
 #if CHIP_DEVICE_CONFIG_ENABLE_JUST_IN_TIME_PROVISIONING
         (!UseManufacturerCredentialsAsOperational() && _OperationalDeviceCredentialsProvisioned()) &&
 #endif
-        Impl()->IsMemberOfFabric();
+        // TODO: Add checks regarding fabric membership (IsMemberOfFabric()) and account pairing (IsPairedToAccount()),
+        // when functionalities will be implemented.
+        true;
+#endif // CHIP_BYPASS_RENDEZVOUS
 }
 
 template <class ImplClass>
@@ -997,7 +1014,7 @@ exit:
     return err;
 }
 
-#if defined(DEBUG)
+#if !defined(NDEBUG)
 template <class ImplClass>
 CHIP_ERROR GenericConfigurationManagerImpl<ImplClass>::_RunUnitTests()
 {

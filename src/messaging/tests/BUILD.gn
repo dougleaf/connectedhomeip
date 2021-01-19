@@ -24,20 +24,25 @@ chip_test_suite("tests") {
   sources = [
     "TestExchangeMgr.cpp",
     "TestMessagingLayer.h",
+    "TestReliableMessageProtocol.cpp",
   ]
 
   cflags = [ "-Wconversion" ]
 
   public_deps = [
-    "${chip_root}/src/inet/tests:tests_common",
+    "${chip_root}/src/inet/tests:helpers",
     "${chip_root}/src/lib/core",
     "${chip_root}/src/lib/support",
     "${chip_root}/src/messaging",
+    "${chip_root}/src/protocols",
     "${chip_root}/src/transport",
     "${chip_root}/src/transport/raw/tests:helpers",
     "${nlio_root}:nlio",
     "${nlunit_test_root}:nlunit-test",
   ]
 
-  tests = [ "TestExchangeMgr" ]
+  tests = [
+    "TestExchangeMgr",
+    "TestReliableMessageProtocol",
+  ]
 }

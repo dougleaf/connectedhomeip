@@ -19,10 +19,11 @@
 #include "Commands.h"
 
 #include "Command.h"
-#include "Logging.h"
 
 #include <algorithm>
 #include <string>
+
+#include <support/CHIPMem.h>
 
 void Commands::Register(const char * clusterName, commands_list commandsList)
 {
@@ -34,35 +35,25 @@ void Commands::Register(const char * clusterName, commands_list commandsList)
 
 int Commands::Run(NodeId localId, NodeId remoteId, int argc, char ** argv)
 {
-    ConfigureChipLogging();
+    CHIP_ERROR err = CHIP_NO_ERROR;
+    PersistentStorage storage;
 
-    CHIP_ERROR err = chip::Platform::MemoryInit();
-    if (err != CHIP_NO_ERROR)
-    {
-        ChipLogError(Controller, "Init Memory failure: %s", chip::ErrorStr(err));
-    }
-    else
-    {
+    err = chip::Platform::MemoryInit();
+    VerifyOrExit(err == CHIP_NO_ERROR, ChipLogError(Controller, "Init Memory failure: %s", chip::ErrorStr(err)));
 
-        ChipDeviceController dc;
+    err = storage.Init();
+    VerifyOrExit(err == CHIP_NO_ERROR, ChipLogError(Controller, "Init Storage failure: %s", chip::ErrorStr(err)));
 
-        err = dc.Init(localId);
-        VerifyOrExit(err == CHIP_NO_ERROR, ChipLogError(Controller, "Init failure: %s", chip::ErrorStr(err)));
+    chip::Logging::SetLogFilter(storage.GetLoggingLevel());
 
-        err = dc.ServiceEvents();
-        VerifyOrExit(err == CHIP_NO_ERROR, ChipLogError(Controller, "Init Run Loop failure: %s", chip::ErrorStr(err)));
+    err = RunCommand(storage, localId, remoteId, argc, argv);
+    SuccessOrExit(err);
 
-        err = RunCommand(dc, remoteId, argc, argv);
-        SuccessOrExit(err);
-
-    exit:
-        dc.ServiceEventSignal();
-        dc.Shutdown();
-    }
+exit:
     return (err == CHIP_NO_ERROR) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-CHIP_ERROR Commands::RunCommand(ChipDeviceController & dc, NodeId remoteId, int argc, char ** argv)
+CHIP_ERROR Commands::RunCommand(PersistentStorage & storage, NodeId localId, NodeId remoteId, int argc, char ** argv)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
     std::map<std::string, CommandsVector>::iterator cluster;
@@ -90,7 +81,7 @@ CHIP_ERROR Commands::RunCommand(ChipDeviceController & dc, NodeId remoteId, int 
         ExitNow(err = CHIP_ERROR_INVALID_ARGUMENT);
     }
 
-    if (strcmp(argv[2], "read") != 0)
+    if (!IsGlobalCommand(argv[2]))
     {
         command = GetCommand(cluster->second, argv[2]);
         if (command == nullptr)
@@ -105,15 +96,15 @@ CHIP_ERROR Commands::RunCommand(ChipDeviceController & dc, NodeId remoteId, int 
         if (argc <= 3)
         {
             ChipLogError(chipTool, "Missing attribute name");
-            ShowClusterAttributes(argv[0], argv[1], cluster->second);
+            ShowClusterAttributes(argv[0], argv[1], argv[2], cluster->second);
             ExitNow(err = CHIP_ERROR_INVALID_ARGUMENT);
         }
 
-        command = GetReadCommand(cluster->second, argv[2], argv[3]);
+        command = GetGlobalCommand(cluster->second, argv[2], argv[3]);
         if (command == nullptr)
         {
             ChipLogError(chipTool, "Unknown attribute: %s", argv[3]);
-            ShowClusterAttributes(argv[0], argv[1], cluster->second);
+            ShowClusterAttributes(argv[0], argv[1], argv[2], cluster->second);
             ExitNow(err = CHIP_ERROR_INVALID_ARGUMENT);
         }
     }
@@ -124,7 +115,7 @@ CHIP_ERROR Commands::RunCommand(ChipDeviceController & dc, NodeId remoteId, int 
         ExitNow(err = CHIP_ERROR_INVALID_ARGUMENT);
     }
 
-    err = command->Run(&dc, remoteId);
+    err = command->Run(storage, localId, remoteId);
     if (err != CHIP_NO_ERROR)
     {
         ChipLogError(chipTool, "Run command failure: %s", chip::ErrorStr(err));
@@ -163,7 +154,7 @@ Command * Commands::GetCommand(CommandsVector & commands, std::string commandNam
     return nullptr;
 }
 
-Command * Commands::GetReadCommand(CommandsVector & commands, std::string commandName, std::string attributeName)
+Command * Commands::GetGlobalCommand(CommandsVector & commands, std::string commandName, std::string attributeName)
 {
     for (auto & command : commands)
     {
@@ -176,6 +167,11 @@ Command * Commands::GetReadCommand(CommandsVector & commands, std::string comman
     return nullptr;
 }
 
+bool Commands::IsGlobalCommand(std::string commandName) const
+{
+    return commandName.compare("read") == 0 || commandName.compare("write") == 0 || commandName.compare("report") == 0;
+}
+
 void Commands::ShowClusters(std::string executable)
 {
     fprintf(stderr, "Usage:\n");
@@ -186,7 +182,10 @@ void Commands::ShowClusters(std::string executable)
     fprintf(stderr, "  +-------------------------------------------------------------------------------------+\n");
     for (auto & cluster : mClusters)
     {
-        fprintf(stderr, "  | * %-82s|\n", cluster.first.c_str());
+        std::string clusterName(cluster.first);
+        std::transform(clusterName.begin(), clusterName.end(), clusterName.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        fprintf(stderr, "  | * %-82s|\n", clusterName.c_str());
     }
     fprintf(stderr, "  +-------------------------------------------------------------------------------------+\n");
 }
@@ -199,18 +198,34 @@ void Commands::ShowCluster(std::string executable, std::string clusterName, Comm
     fprintf(stderr, "  +-------------------------------------------------------------------------------------+\n");
     fprintf(stderr, "  | Commands:                                                                           |\n");
     fprintf(stderr, "  +-------------------------------------------------------------------------------------+\n");
-    bool readCommand = false;
+    bool readCommand   = false;
+    bool writeCommand  = false;
+    bool reportCommand = false;
     for (auto & command : commands)
     {
-        if (strcmp(command->GetName(), "read") == 0)
+        bool shouldPrint = true;
+
+        if (IsGlobalCommand(command->GetName()))
         {
-            if (readCommand == false)
+            if (strcmp(command->GetName(), "read") == 0 && readCommand == false)
             {
-                fprintf(stderr, "  | * %-82s|\n", command->GetName());
                 readCommand = true;
             }
+            else if (strcmp(command->GetName(), "write") == 0 && writeCommand == false)
+            {
+                writeCommand = true;
+            }
+            else if (strcmp(command->GetName(), "report") == 0 && reportCommand == false)
+            {
+                reportCommand = true;
+            }
+            else
+            {
+                shouldPrint = false;
+            }
         }
-        else
+
+        if (shouldPrint)
         {
             fprintf(stderr, "  | * %-82s|\n", command->GetName());
         }
@@ -218,17 +233,19 @@ void Commands::ShowCluster(std::string executable, std::string clusterName, Comm
     fprintf(stderr, "  +-------------------------------------------------------------------------------------+\n");
 }
 
-void Commands::ShowClusterAttributes(std::string executable, std::string clusterName, CommandsVector & commands)
+void Commands::ShowClusterAttributes(std::string executable, std::string clusterName, std::string commandName,
+                                     CommandsVector & commands)
 {
     fprintf(stderr, "Usage:\n");
-    fprintf(stderr, "  %s %s read attribute-name [param1 param2 ...]\n", executable.c_str(), clusterName.c_str());
+    fprintf(stderr, "  %s %s %s attribute-name [param1 param2 ...]\n", executable.c_str(), clusterName.c_str(),
+            commandName.c_str());
     fprintf(stderr, "\n");
     fprintf(stderr, "  +-------------------------------------------------------------------------------------+\n");
     fprintf(stderr, "  | Attributes:                                                                         |\n");
     fprintf(stderr, "  +-------------------------------------------------------------------------------------+\n");
     for (auto & command : commands)
     {
-        if (strcmp(command->GetName(), "read") == 0)
+        if (commandName.compare(command->GetName()) == 0)
         {
             fprintf(stderr, "  | * %-82s|\n", command->GetAttribute());
         }

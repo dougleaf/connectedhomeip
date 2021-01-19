@@ -48,9 +48,11 @@
  *          Provides Bluez dbus implementatioon for BLE
  */
 
+#include <AdditionalDataPayload.h>
 #include <ble/BleUUID.h>
 #include <ble/CHIPBleServiceData.h>
 #include <platform/CHIPDeviceLayer.h>
+#include <protocols/Protocols.h>
 
 #if CHIP_DEVICE_CONFIG_ENABLE_CHIPOBLE
 #include <errno.h>
@@ -65,6 +67,8 @@
 #include <support/CodeUtils.h>
 
 using namespace ::nl;
+using namespace chip::SetupPayload;
+using namespace chip::Protocols;
 
 namespace chip {
 namespace DeviceLayer {
@@ -114,9 +118,9 @@ static BluezLEAdvertisement1 * BluezAdvertisingCreate(BluezEndpoint * apEndpoint
     g_variant_builder_init(&serviceDataBuilder, G_VARIANT_TYPE("a{sv}"));
     g_variant_builder_init(&serviceUUIDsBuilder, G_VARIANT_TYPE("as"));
 
-    g_variant_builder_add(
-        &serviceDataBuilder, "{sv}", apEndpoint->mpAdvertisingUUID,
-        g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, apEndpoint->mpChipServiceData, sizeof(CHIPServiceData), sizeof(uint8_t)));
+    g_variant_builder_add(&serviceDataBuilder, "{sv}", apEndpoint->mpAdvertisingUUID,
+                          g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, &apEndpoint->mDeviceIdInfo,
+                                                    sizeof(apEndpoint->mDeviceIdInfo), sizeof(uint8_t)));
     g_variant_builder_add(&serviceUUIDsBuilder, "s", apEndpoint->mpAdvertisingUUID);
 
     if (apEndpoint->mpAdapterName != nullptr)
@@ -695,6 +699,11 @@ static void BluezConnectionInit(BluezConnection * apConn)
                 {
                     apConn->mpC2 = char1;
                 }
+                else if ((BluezIsCharOnService(char1, apConn->mpService) == TRUE) &&
+                         (strcmp(bluez_gatt_characteristic1_get_uuid(char1), CHIP_PLAT_BLE_UUID_C3_STRING) == 0))
+                {
+                    apConn->mpC3 = char1;
+                }
                 else
                 {
                     g_object_unref(char1);
@@ -921,8 +930,8 @@ static void BluezSignalInterfacePropertiesChanged(GDBusObjectManagerClient * aMa
                             conn->mpEndpoint    = endpoint;
                             BluezConnectionInit(conn);
                             endpoint->mpPeerDevicePath = g_strdup(g_dbus_proxy_get_object_path(aInterface));
-                            ChipLogError(DeviceLayer, "coonnected, insert, conn:%p, c1:%p, c2:%p and %s", conn, conn->mpC1,
-                                         conn->mpC2, endpoint->mpPeerDevicePath);
+                            ChipLogDetail(DeviceLayer, "Device %s (Path: %s) Connected", conn->mpPeerAddress,
+                                          endpoint->mpPeerDevicePath);
                             g_hash_table_insert(endpoint->mpConnMap, endpoint->mpPeerDevicePath, conn);
                         }
                         // for central, we do not call BluezConnectionInit until the services have been resolved
@@ -983,8 +992,12 @@ static void BluezHandleNewDevice(BluezDevice1 * device, BluezEndpoint * apEndpoi
     }
     else
     {
+        // We need to handle device connection both this function and BluezSignalInterfacePropertiesChanged
+        // When a device is connected for first time, this function will be triggerred.
+        // The future connections for the same device will trigger ``Connect'' property change.
+        // TODO: Factor common code in the two function.
         BluezConnection * conn;
-        SuccessOrExit(bluez_device1_get_connected(device));
+        VerifyOrExit(bluez_device1_get_connected(device), ChipLogError(DeviceLayer, "FAIL: device is not connected"));
 
         conn = static_cast<BluezConnection *>(
             g_hash_table_lookup(apEndpoint->mpConnMap, g_dbus_proxy_get_object_path(G_DBUS_PROXY(device))));
@@ -997,7 +1010,8 @@ static void BluezHandleNewDevice(BluezDevice1 * device, BluezEndpoint * apEndpoi
         conn->mpDevice      = static_cast<BluezDevice1 *>(g_object_ref(device));
         conn->mpEndpoint    = apEndpoint;
         BluezConnectionInit(conn);
-
+        apEndpoint->mpPeerDevicePath = g_strdup(g_dbus_proxy_get_object_path(G_DBUS_PROXY(device)));
+        ChipLogDetail(DeviceLayer, "Device %s (Path: %s) Connected", conn->mpPeerAddress, apEndpoint->mpPeerDevicePath);
         g_hash_table_insert(apEndpoint->mpConnMap, g_strdup(g_dbus_proxy_get_object_path(G_DBUS_PROXY(device))), conn);
     }
 
@@ -1235,11 +1249,6 @@ void EndpointCleanup(BluezEndpoint * apEndpoint)
             g_free(apEndpoint->mpAdvertisingUUID);
             apEndpoint->mpAdvertisingUUID = nullptr;
         }
-        if (apEndpoint->mpChipServiceData != nullptr)
-        {
-            g_free(apEndpoint->mpChipServiceData);
-            apEndpoint->mpChipServiceData = nullptr;
-        }
         if (apEndpoint->mpPeerDevicePath != nullptr)
         {
             g_free(apEndpoint->mpPeerDevicePath);
@@ -1256,11 +1265,57 @@ void BluezObjectsCleanup(BluezEndpoint * apEndpoint)
     EndpointCleanup(apEndpoint);
 }
 
+#if CHIP_ENABLE_ADDITIONAL_DATA_ADVERTISING
+static void UpdateAdditionalDataCharacteristic(BluezGattCharacteristic1 * characteristic)
+{
+    if (characteristic == nullptr)
+    {
+        return;
+    }
+
+    // Construct the TLV for the additional data
+    GVariant * cValue = nullptr;
+    CHIP_ERROR err    = CHIP_NO_ERROR;
+    TLVWriter writer;
+    TLVWriter innerWriter;
+    chip::System::PacketBufferHandle bufferHandle = chip::System::PacketBuffer::New();
+    chip::System::PacketBuffer * buffer           = bufferHandle.Get_ForNow();
+
+    writer.Init(buffer);
+
+    err = writer.OpenContainer(AnonymousTag, kTLVType_Structure, innerWriter);
+    SuccessOrExit(err);
+
+    // Adding the rotating device id to the TLV data
+    err = innerWriter.PutString(ContextTag(kRotatingDeviceIdTag), CHIP_ROTATING_DEVICE_ID);
+    SuccessOrExit(err);
+
+    err = writer.CloseContainer(innerWriter);
+    SuccessOrExit(err);
+
+    writer.Finalize();
+
+    cValue = g_variant_new_from_data(G_VARIANT_TYPE("ay"), buffer->Start(), buffer->DataLength(), TRUE, g_free,
+                                     g_memdup(buffer->Start(), buffer->DataLength()));
+    bluez_gatt_characteristic1_set_value(characteristic, cValue);
+
+    return;
+
+exit:
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(DeviceLayer, "Failed to generate TLV encoded Additional Data", __func__);
+    }
+    return;
+}
+#endif
+
 static void BluezPeripheralObjectsSetup(gpointer apClosure)
 {
 
     static const char * const c1_flags[] = { "write", nullptr };
     static const char * const c2_flags[] = { "read", "indicate", nullptr };
+    static const char * const c3_flags[] = { "read", nullptr };
 
     BluezEndpoint * endpoint = static_cast<BluezEndpoint *>(apClosure);
     VerifyOrExit(endpoint != nullptr, ChipLogError(DeviceLayer, "endpoint is NULL in %s", __func__));
@@ -1292,6 +1347,27 @@ static void BluezPeripheralObjectsSetup(gpointer apClosure)
 
     ChipLogDetail(DeviceLayer, "CHIP BTP C1 %s", bluez_gatt_characteristic1_get_service(endpoint->mpC1));
     ChipLogDetail(DeviceLayer, "CHIP BTP C2 %s", bluez_gatt_characteristic1_get_service(endpoint->mpC2));
+
+#if CHIP_ENABLE_ADDITIONAL_DATA_ADVERTISING
+    ChipLogDetail(DeviceLayer, "CHIP_ENABLE_ADDITIONAL_DATA_ADVERTISING is TRUE");
+    // Additional data characteristics
+    endpoint->mpC3 =
+        BluezCharacteristicCreate(endpoint->mpService, g_strdup("c3"), g_strdup(CHIP_PLAT_BLE_UUID_C3_STRING), endpoint->mpRoot);
+    bluez_gatt_characteristic1_set_flags(endpoint->mpC3, c3_flags);
+    g_signal_connect(endpoint->mpC3, "handle-read-value", G_CALLBACK(BluezCharacteristicReadValue), apClosure);
+    g_signal_connect(endpoint->mpC3, "handle-write-value", G_CALLBACK(BluezCharacteristicWriteValueError), NULL);
+    g_signal_connect(endpoint->mpC3, "handle-acquire-write", G_CALLBACK(BluezCharacteristicAcquireWriteError), NULL);
+    g_signal_connect(endpoint->mpC3, "handle-acquire-notify", G_CALLBACK(BluezCharacteristicAcquireNotify), apClosure);
+    g_signal_connect(endpoint->mpC3, "handle-start-notify", G_CALLBACK(BluezCharacteristicStartNotify), apClosure);
+    g_signal_connect(endpoint->mpC3, "handle-stop-notify", G_CALLBACK(BluezCharacteristicStopNotify), apClosure);
+    g_signal_connect(endpoint->mpC3, "handle-confirm", G_CALLBACK(BluezCharacteristicConfirm), apClosure);
+    // update the characteristic value
+    UpdateAdditionalDataCharacteristic(endpoint->mpC3);
+    ChipLogDetail(DeviceLayer, "CHIP BTP C3 %s", bluez_gatt_characteristic1_get_service(endpoint->mpC3));
+#else
+    ChipLogDetail(DeviceLayer, "CHIP_ENABLE_ADDITIONAL_DATA_ADVERTISING is FALSE");
+    (void) c3_flags;
+#endif
 
 exit:
     return;
@@ -1445,7 +1521,7 @@ exit:
     return G_SOURCE_REMOVE;
 }
 
-bool SendBluezIndication(BLE_CONNECTION_OBJECT apConn, chip::System::PacketBuffer * apBuf)
+bool SendBluezIndication(BLE_CONNECTION_OBJECT apConn, chip::System::PacketBufferHandle apBuf)
 {
     ConnectionDataBundle * closure;
     const char * msg = nullptr;
@@ -1453,7 +1529,7 @@ bool SendBluezIndication(BLE_CONNECTION_OBJECT apConn, chip::System::PacketBuffe
     uint8_t * buffer = nullptr;
     size_t len       = 0;
 
-    VerifyOrExit(apBuf != nullptr, ChipLogError(DeviceLayer, "apBuf is NULL in %s", __func__));
+    VerifyOrExit(!apBuf.IsNull(), ChipLogError(DeviceLayer, "apBuf is NULL in %s", __func__));
     buffer = apBuf->Start();
     len    = apBuf->DataLength();
 
@@ -1468,11 +1544,6 @@ exit:
     if (nullptr != msg)
     {
         ChipLogError(Ble, msg);
-    }
-
-    if (nullptr != apBuf)
-    {
-        chip::System::PacketBuffer::Free(apBuf);
     }
 
     return success;
@@ -1560,32 +1631,21 @@ CHIP_ERROR ConfigureBluezAdv(BLEAdvConfig & aBleAdvConfig, BluezEndpoint * apEnd
     VerifyOrExit(aBleAdvConfig.mpBleName != nullptr, msg = "FAIL: BLE name is NULL");
     VerifyOrExit(aBleAdvConfig.mpAdvertisingUUID != nullptr, msg = "FAIL: BLE mpAdvertisingUUID is NULL in %s");
 
-    apEndpoint->mpAdapterName                             = g_strdup(aBleAdvConfig.mpBleName);
-    apEndpoint->mpAdvertisingUUID                         = g_strdup(aBleAdvConfig.mpAdvertisingUUID);
-    apEndpoint->mNodeId                                   = aBleAdvConfig.mNodeId;
-    apEndpoint->mType                                     = aBleAdvConfig.mType;
-    apEndpoint->mDuration                                 = aBleAdvConfig.mDuration;
-    apEndpoint->mpChipServiceData                         = static_cast<CHIPServiceData *>(g_malloc(sizeof(CHIPServiceData) + 1));
-    apEndpoint->mpChipServiceData->mDataBlock0Len         = sizeof(CHIPIdInfo) + 1;
-    apEndpoint->mpChipServiceData->mDataBlock0Type        = 1;
-    apEndpoint->mpChipServiceData->mIdInfo.mMajor         = aBleAdvConfig.mMajor;
-    apEndpoint->mpChipServiceData->mIdInfo.mMinor         = aBleAdvConfig.mMinor;
-    apEndpoint->mpChipServiceData->mIdInfo.mVendorId      = aBleAdvConfig.mVendorId;
-    apEndpoint->mpChipServiceData->mIdInfo.mProductId     = aBleAdvConfig.mProductId;
-    apEndpoint->mpChipServiceData->mIdInfo.mDeviceId      = aBleAdvConfig.mDeviceId;
-    apEndpoint->mpChipServiceData->mIdInfo.mPairingStatus = aBleAdvConfig.mPairingStatus;
-    apEndpoint->mDuration                                 = aBleAdvConfig.mDuration;
+    apEndpoint->mpAdapterName     = g_strdup(aBleAdvConfig.mpBleName);
+    apEndpoint->mpAdvertisingUUID = g_strdup(aBleAdvConfig.mpAdvertisingUUID);
+    apEndpoint->mNodeId           = aBleAdvConfig.mNodeId;
+    apEndpoint->mType             = aBleAdvConfig.mType;
+    apEndpoint->mDuration         = aBleAdvConfig.mDuration;
+    apEndpoint->mDuration         = aBleAdvConfig.mDuration;
+
+    err = ConfigurationMgr().GetBLEDeviceIdentificationInfo(apEndpoint->mDeviceIdInfo);
+    SuccessOrExit(err);
 
 exit:
     if (nullptr != msg)
     {
         ChipLogDetail(DeviceLayer, "%s in %s", msg, __func__);
         err = CHIP_ERROR_INCORRECT_STATE;
-        if (apEndpoint->mpChipServiceData != nullptr)
-        {
-            g_free(apEndpoint->mpChipServiceData);
-            apEndpoint->mpChipServiceData = nullptr;
-        }
     }
     return err;
 }

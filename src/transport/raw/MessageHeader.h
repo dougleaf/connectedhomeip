@@ -54,10 +54,19 @@ enum class EncryptionType
  *  @brief
  *    The CHIP Exchange header flag bits.
  */
-enum class ExFlagValues : uint16_t
+enum class ExFlagValues : uint8_t
 {
     /// Set when current message is sent by the initiator of an exchange.
-    kExchangeFlag_Initiator = 0x0001,
+    kExchangeFlag_Initiator = 0x01,
+
+    /// Set when current message is an acknowledgment for a previously received message.
+    kExchangeFlag_AckMsg = 0x02,
+
+    /// Set when current message is requesting an acknowledgment from the recipient.
+    kExchangeFlag_NeedsAck = 0x04,
+
+    /// Set when a vendor id is prepended to the Message Protocol Id field.
+    kExchangeFlag_VendorIdPresent = 0x10,
 };
 
 enum class FlagValues : uint16_t
@@ -68,21 +77,25 @@ enum class FlagValues : uint16_t
     /// Header flag specifying that a source node id is included in the header.
     kSourceNodeIdPresent = 0x0200,
 
-    /// Header flag specifying that a source vendor id is included in the header.
-    kVendorIdPresent = 0x0400,
-
     /// Header flag specifying that it is a control message for secure session.
     kSecureSessionControlMessage = 0x0800,
 
+    /// Header flag specifying that it is a encrypted message.
+    kSecure = 0x0001,
+
 };
 
-using Flags = BitFlags<uint16_t, FlagValues>;
+using Flags   = BitFlags<uint16_t, FlagValues>;
+using ExFlags = BitFlags<uint8_t, ExFlagValues>;
 
 // Header is a 16-bit value of the form
-//  |  4 bit  | 4 bit |  4 bit  |  4 bit   |
-//  +---------+-------+---------+----------|
-//  | version | Flags | encType | reserved |
-static constexpr uint16_t kFlagsMask = 0x0F00;
+//  |  4 bit  | 4 bit |8 bit Security Flags|
+//  +---------+-------+--------------------|
+//  | version | Flags | P | C |Reserved| E |
+//                      |   |            +---Encrypted
+//                      |   +----------------Control message (TODO: Implement this)
+//                      +--------------------Privacy enhancements (TODO: Implement this)
+static constexpr uint16_t kFlagsMask = 0x0F01;
 
 } // namespace Header
 
@@ -225,7 +238,7 @@ public:
      *    CHIP_ERROR_INVALID_ARGUMENT on insufficient buffer size
      *    CHIP_ERROR_VERSION_MISMATCH if header version is not supported.
      */
-    CHIP_ERROR Decode(const uint8_t * data, size_t size, uint16_t * decode_size);
+    CHIP_ERROR Decode(const uint8_t * data, uint16_t size, uint16_t * decode_size);
 
     /**
      * Encodes a header into the given buffer.
@@ -233,14 +246,13 @@ public:
      * @param data - the buffer to write to
      * @param size - space available in the buffer (in bytes)
      * @param encode_size - number of bytes written to the buffer.
-     * @param payloadFlags extra flags for packet header encoding
      *
      * @return CHIP_NO_ERROR on success.
      *
      * Possible failures:
      *    CHIP_ERROR_INVALID_ARGUMENT on insufficient buffer size
      */
-    CHIP_ERROR Encode(uint8_t * data, size_t size, uint16_t * encode_size, Header::Flags payloadFlags) const;
+    CHIP_ERROR Encode(uint8_t * data, uint16_t size, uint16_t * encode_size) const;
 
 private:
     /// Represents the current encode/decode header version
@@ -277,6 +289,8 @@ private:
 class PayloadHeader
 {
 public:
+    PayloadHeader & operator=(const PayloadHeader &) = default;
+
     /**
      * Gets the vendor id in the current message.
      *
@@ -293,10 +307,18 @@ public:
     /** Get the secure msg type from this header. */
     uint8_t GetMessageType() const { return mMessageType; }
 
+    /**
+     * Gets the Acknowledged Message Counter from this header.
+     *
+     * NOTE: the Acknowledged Message Counter is optional and may be missing.
+     */
+    const Optional<uint32_t> & GetAckId() const { return mAckId; }
+
     /** Set the vendor id for this header. */
     PayloadHeader & SetVendorId(uint16_t id)
     {
         mVendorId.SetValue(id);
+        mExchangeFlags.Set(Header::ExFlagValues::kExchangeFlag_VendorIdPresent);
 
         return *this;
     }
@@ -305,6 +327,7 @@ public:
     PayloadHeader & SetVendorId(Optional<uint16_t> id)
     {
         mVendorId = id;
+        mExchangeFlags.Set(Header::ExFlagValues::kExchangeFlag_VendorIdPresent, id.HasValue());
 
         return *this;
     }
@@ -345,6 +368,28 @@ public:
         return *this;
     }
 
+    PayloadHeader & SetAckId(uint32_t id)
+    {
+        mAckId.SetValue(id);
+        mExchangeFlags.Set(Header::ExFlagValues::kExchangeFlag_AckMsg);
+        return *this;
+    }
+
+    /** Set the AckMsg flag bit. */
+    PayloadHeader & SetAckId(Optional<uint32_t> id)
+    {
+        mAckId = id;
+        mExchangeFlags.Set(Header::ExFlagValues::kExchangeFlag_AckMsg, id.HasValue());
+        return *this;
+    }
+
+    /** Set the NeedsAck flag bit. */
+    PayloadHeader & SetNeedsAck(bool inNeedsAck)
+    {
+        mExchangeFlags.Set(Header::ExFlagValues::kExchangeFlag_NeedsAck, inNeedsAck);
+        return *this;
+    }
+
     /**
      *  Determine whether the initiator of the exchange.
      *
@@ -352,6 +397,22 @@ public:
      *
      */
     bool IsInitiator() const { return mExchangeFlags.Has(Header::ExFlagValues::kExchangeFlag_Initiator); }
+
+    /**
+     *  Determine whether the current message is an acknowledgment for a previously received message.
+     *
+     *  @return Returns 'true' if current message is an acknowledgment, else 'false'.
+     *
+     */
+    bool IsAckMsg() const { return mExchangeFlags.Has(Header::ExFlagValues::kExchangeFlag_AckMsg); }
+
+    /**
+     *  Determine whether current message is requesting an acknowledgment from the recipient.
+     *
+     *  @return Returns 'true' if the current message is requesting an acknowledgment from the recipient, else 'false'.
+     *
+     */
+    bool IsNeedsAck() const { return mExchangeFlags.Has(Header::ExFlagValues::kExchangeFlag_NeedsAck); }
 
     /**
      * A call to `Encode` will require at least this many bytes on the current
@@ -364,7 +425,6 @@ public:
     /**
      * Decodes the encrypted header fields from the given buffer.
      *
-     * @param flags - decode flags
      * @param data - the buffer to read from
      * @param size - bytes available in the buffer
      * @param decode_size - number of bytes read from the buffer to decode the
@@ -376,7 +436,7 @@ public:
      *    CHIP_ERROR_INVALID_ARGUMENT on insufficient buffer size
      *    CHIP_ERROR_VERSION_MISMATCH if header version is not supported.
      */
-    CHIP_ERROR Decode(Header::Flags flags, const uint8_t * data, size_t size, uint16_t * decode_size);
+    CHIP_ERROR Decode(const uint8_t * data, uint16_t size, uint16_t * decode_size);
 
     /**
      * Encodes the encrypted part of the header into the given buffer.
@@ -390,15 +450,9 @@ public:
      * Possible failures:
      *    CHIP_ERROR_INVALID_ARGUMENT on insufficient buffer size
      */
-    CHIP_ERROR Encode(uint8_t * data, size_t size, uint16_t * encode_size) const;
-
-    /** Flags required for encoding this payload. */
-    Header::Flags GetEncodePacketFlags() const;
+    CHIP_ERROR Encode(uint8_t * data, uint16_t size, uint16_t * encode_size) const;
 
 private:
-    /// Header structure for exchange information
-    uint8_t mExchangeHeader = 0;
-
     /// Packet type (application data, security control packets, e.g. pairing,
     /// configuration, rekey etc)
     uint8_t mMessageType = 0;
@@ -413,7 +467,10 @@ private:
     uint16_t mProtocolID = 0;
 
     /// Bit flag indicators for CHIP Exchange header
-    BitFlags<uint16_t, Header::ExFlagValues> mExchangeFlags;
+    Header::ExFlags mExchangeFlags;
+
+    /// Message counter of a previous message that is being acknowledged by the current message
+    Optional<uint32_t> mAckId;
 };
 
 /** Handles encoding/decoding of CHIP message headers */
@@ -450,7 +507,7 @@ public:
      *    CHIP_ERROR_INVALID_ARGUMENT on insufficient buffer size
      *    CHIP_ERROR_VERSION_MISMATCH if header version is not supported.
      */
-    CHIP_ERROR Decode(const PacketHeader & packetHeader, const uint8_t * data, size_t size, uint16_t * decode_size);
+    CHIP_ERROR Decode(const PacketHeader & packetHeader, const uint8_t * data, uint16_t size, uint16_t * decode_size);
 
     /**
      * Encodes the Messae Authentication Tag into the given buffer.
@@ -465,7 +522,7 @@ public:
      * Possible failures:
      *    CHIP_ERROR_INVALID_ARGUMENT on insufficient buffer size
      */
-    CHIP_ERROR Encode(const PacketHeader & packetHeader, uint8_t * data, size_t size, uint16_t * encode_size) const;
+    CHIP_ERROR Encode(const PacketHeader & packetHeader, uint8_t * data, uint16_t size, uint16_t * encode_size) const;
 
     static uint16_t TagLenForEncryptionType(Header::EncryptionType encType);
 

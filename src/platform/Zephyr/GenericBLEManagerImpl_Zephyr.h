@@ -71,9 +71,12 @@ private:
     bool UnsubscribeCharacteristic(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId);
     bool CloseConnection(BLE_CONNECTION_OBJECT conId);
     uint16_t GetMTU(BLE_CONNECTION_OBJECT conId) const;
-    bool SendIndication(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId, PacketBuffer * pBuf);
-    bool SendWriteRequest(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId, PacketBuffer * pBuf);
-    bool SendReadRequest(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId, PacketBuffer * pBuf);
+    bool SendIndication(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId,
+                        PacketBufferHandle pBuf);
+    bool SendWriteRequest(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId,
+                          PacketBufferHandle pBuf);
+    bool SendReadRequest(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId,
+                         PacketBufferHandle pBuf);
     bool SendReadResponse(BLE_CONNECTION_OBJECT conId, BLE_READ_REQUEST_CONTEXT requestContext, const ChipBleUUID * svcId,
                           const ChipBleUUID * charId);
 
@@ -122,6 +125,7 @@ private:
     static void HandleTXIndicated(bt_conn * conn, const bt_gatt_attr * attr, uint8_t err);
     static void HandleConnect(bt_conn * conn, uint8_t err);
     static void HandleDisconnect(bt_conn * conn, uint8_t reason);
+    static void HandleBLEAdvertisementTimeout(System::Layer * layer, void * param, System::Error error);
 
 public:
     // Below callbacks are public in order to be visible from the global scope.

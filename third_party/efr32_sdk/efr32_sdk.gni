@@ -125,6 +125,8 @@ template("efr32_sdk") {
       "${efr32_board}=1",
     ]
 
+    defines += board_defines
+
     if (efr32_family == "efr32mg12") {
       _include_dirs += [
         "${efr32_sdk_root}/hardware/kit/EFR32MG12_${efr32_board}/config",
@@ -144,16 +146,16 @@ template("efr32_sdk") {
     } else if (efr32_family == "efr32mg21") {
       _include_dirs += [
         "${efr32_sdk_root}/hardware/kit/EFR32MG21_${efr32_board}/config",
-        "${efr32_sdk_root}/platform/Device/SiliconLabs/efr32mg21/Include",
+        "${efr32_sdk_root}/platform/Device/SiliconLabs/EFR32MG21/Include",
         "${efr32_sdk_root}/platform/radio/rail_lib/chip/efr32/efr32xg2x",
         "${efr32_sdk_root}/util/third_party/freertos/Source/portable/GCC/ARM_CM3",
       ]
 
       libs += [
-        "${efr32_sdk_root}/protocol/bluetooth/lib/efr32mg21/GCC/libbluetooth.a",
+        "${efr32_sdk_root}/protocol/bluetooth/lib/EFR32MG21/GCC/libbluetooth.a",
         "${efr32_sdk_root}/platform/radio/rail_lib/autogen/librail_release/librail_multiprotocol_efr32xg21_gcc_release.a",
         "${efr32_sdk_root}/platform/emdrv/nvm3/lib/libnvm3_CM33_gcc.a",
-        "${efr32_sdk_root}/protocol/bluetooth/lib/efr32mg21/GCC/libmbedtls.a",
+        "${efr32_sdk_root}/protocol/bluetooth/lib/EFR32MG21/GCC/libmbedtls.a",
       ]
 
       defines += [
@@ -166,6 +168,8 @@ template("efr32_sdk") {
     foreach(include_dir, _include_dirs) {
       cflags += [ "-isystem" + rebase_path(include_dir, root_build_dir) ]
     }
+
+    cflags += [ "-Wno-maybe-uninitialized" ]
 
     if (defined(invoker.defines)) {
       defines += invoker.defines
@@ -305,6 +309,12 @@ template("efr32_sdk") {
       "${mbedtls_root}/repo/library/platform_util.c",
     ]
 
+    if (defined(enable_fem)) {
+      sources += [
+        "${efr32_sdk_root}/util/plugin/plugin-common/fem-control/fem-control.c",
+      ]
+    }
+
     if (defined(invoker.show_qr_code)) {
       if (invoker.show_qr_code) {
         sources += [
@@ -326,8 +336,8 @@ template("efr32_sdk") {
       ]
     } else if (efr32_family == "efr32mg21") {
       sources += [
-        "${efr32_sdk_root}/platform/Device/SiliconLabs/efr32mg21/Source/GCC/startup_efr32mg21.c",
-        "${efr32_sdk_root}/platform/Device/SiliconLabs/efr32mg21/Source/system_efr32mg21.c",
+        "${efr32_sdk_root}/platform/Device/SiliconLabs/EFR32MG21/Source/GCC/startup_efr32mg21.c",
+        "${efr32_sdk_root}/platform/Device/SiliconLabs/EFR32MG21/Source/system_efr32mg21.c",
         "${efr32_sdk_root}/util/third_party/freertos/Source/portable/GCC/ARM_CM3/port.c",
       ]
     }

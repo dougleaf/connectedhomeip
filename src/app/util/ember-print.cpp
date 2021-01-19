@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "debug-printing.h"
 #include "gen/gen_config.h"
 
 #include <support/logging/CHIPLogging.h>
@@ -25,7 +26,6 @@
 bool emberAfPrintReceivedMessages = true;
 
 using namespace chip::Logging;
-extern "C" {
 
 void emberAfPrint(int category, const char * format, ...)
 {
@@ -48,6 +48,10 @@ void emberAfPrintln(int category, const char * format, ...)
         va_end(args);
     }
 }
+
+// TODO: issue #3662 - Unbounded stack in emberAfPrintBuffer()
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstack-usage="
 
 void emberAfPrintBuffer(int category, const uint8_t * buffer, uint16_t length, bool withSpace)
 {
@@ -72,8 +76,9 @@ void emberAfPrintBuffer(int category, const uint8_t * buffer, uint16_t length, b
     }
 }
 
+#pragma GCC diagnostic pop // -Wstack-usage
+
 void emberAfPrintString(int category, const uint8_t * string)
 {
     emberAfPrint(category, "%s", string);
-}
 }

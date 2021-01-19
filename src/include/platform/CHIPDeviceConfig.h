@@ -337,7 +337,7 @@
  * When set, CHIPoBLE advertisements will stop while a CHIPoBLE connection is active.
  */
 #ifndef CHIP_DEVICE_CONFIG_CHIPOBLE_SINGLE_CONNECTION
-#define CHIP_DEVICE_CONFIG_CHIPOBLE_SINGLE_CONNECTION 0
+#define CHIP_DEVICE_CONFIG_CHIPOBLE_SINGLE_CONNECTION 1
 #endif
 
 /**
@@ -348,6 +348,22 @@
  */
 #ifndef CHIP_DEVICE_CONFIG_CHIPOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED
 #define CHIP_DEVICE_CONFIG_CHIPOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED 0
+#endif
+
+/**
+ * CHIP_DEVICE_CONFIG_CHIPOBLE_ENABLE_ADVERTISING_AUTOSTART
+ *
+ * Enable CHIPoBLE advertising start automatically after device power-up.
+ *
+ * CHIP's device may start advertising automatically only if its all primary device
+ * functions are within a CHIP network. Device providing unrelated to CHIP functionalities
+ * should not start advertising automatically after power-up.
+ *
+ * TODO: Default value should be changed to 0, after all platforms will implement enabling
+ *       advertisement in their own way.
+ */
+#ifndef CHIP_DEVICE_CONFIG_CHIPOBLE_ENABLE_ADVERTISING_AUTOSTART
+#define CHIP_DEVICE_CONFIG_CHIPOBLE_ENABLE_ADVERTISING_AUTOSTART 1
 #endif
 
 /**
@@ -386,6 +402,18 @@
  */
 #ifndef CHIP_DEVICE_CONFIG_BLE_SLOW_ADVERTISING_INTERVAL
 #define CHIP_DEVICE_CONFIG_BLE_SLOW_ADVERTISING_INTERVAL 3200
+#endif
+
+/**
+ * CHIP_DEVICE_CONFIG_BLE_ADVERTISING_TIMEOUT
+ *
+ * The amount of time in miliseconds after which BLE advertisement should be disabled, counting
+ * from the moment of advertisement commencement.
+ *
+ * Defaults to 9000000 (15 minutes).
+ */
+#ifndef CHIP_DEVICE_CONFIG_BLE_ADVERTISING_TIMEOUT
+#define CHIP_DEVICE_CONFIG_BLE_ADVERTISING_TIMEOUT (15 * 60 * 1000)
 #endif
 
 // -------------------- Time Sync Configuration --------------------
@@ -505,6 +533,15 @@
 #endif
 
 /**
+ * CHIP_DEVICE_CONFIG_THREAD_FTD
+ *
+ * Enable Full Thread Device features
+ */
+#ifndef CHIP_DEVICE_CONFIG_THREAD_FTD
+#define CHIP_DEVICE_CONFIG_THREAD_FTD 1
+#endif
+
+/**
  * CHIP_DEVICE_CONFIG_THREAD_TASK_NAME
  *
  * The name of the Thread task.
@@ -594,17 +631,6 @@
  */
 #ifndef CHIP_DEVICE_CONFIG_ENABLE_TEST_DEVICE_IDENTITY
 #define CHIP_DEVICE_CONFIG_ENABLE_TEST_DEVICE_IDENTITY 0
-#endif
-
-/**
- * CHIP_DEVICE_CONFIG_DISABLE_ACCOUNT_PAIRING
- *
- * Disables sending the PairDeviceToAccount request to the service during a RegisterServicePairAccount
- * operation.  When this option is enabled, the device will perform all local operations associated
- * with registering a service, but will not request the service to add the device to the user's account.
- */
-#ifndef CHIP_DEVICE_CONFIG_DISABLE_ACCOUNT_PAIRING
-#define CHIP_DEVICE_CONFIG_DISABLE_ACCOUNT_PAIRING 0
 #endif
 
 // -------------------- Network Telemetry Configuration --------------------
@@ -910,4 +936,13 @@
  */
 #ifndef CHIP_DEVICE_CONFIG_FIRMWARE_BUILD_TIME
 #define CHIP_DEVICE_CONFIG_FIRMWARE_BUILD_TIME __TIME__
+#endif
+
+/**
+ * CHIP_ROTATING_DEVICE_ID
+ *
+ * Sample Rotating Device Id.
+ */
+#ifndef CHIP_ROTATING_DEVICE_ID
+#define CHIP_ROTATING_DEVICE_ID "1122334455667788"
 #endif

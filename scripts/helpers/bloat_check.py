@@ -141,7 +141,7 @@ def generateBloatReport(outputFileName,
 
 
 def sendFileAsPrComment(job_name, filename, gh_token, gh_repo, gh_pr_number,
-                        compare_results):
+                        compare_results, base_sha):
   """Generates a PR comment containing the specified file content."""
 
   logging.info('Uploading report to "%s", PR %d', gh_repo, gh_pr_number)
@@ -175,7 +175,7 @@ def sendFileAsPrComment(job_name, filename, gh_token, gh_repo, gh_pr_number,
                                                        change.vmChange)
 
   # NOTE: PRs are issues with attached patches, hence the API naming
-  pull.create_issue_comment("""{title}
+  pull.create_issue_comment("""{title} from {baseSha}
 
   {table}
 
@@ -187,7 +187,7 @@ def sendFileAsPrComment(job_name, filename, gh_token, gh_repo, gh_pr_number,
 ```
 
 </details>
-""".format(title=titleHeading, table=compareTable, rawReportText=rawText))
+""".format(title=titleHeading, baseSha=base_sha, table=compareTable, rawReportText=rawText))
 
 
 def getPullRequestBaseSha(githubToken,  githubRepo, pullRequestNumber):
@@ -328,7 +328,7 @@ def main():
       results = generateBloatReport(report_name, bOutput, aOutput)
 
       sendFileAsPrComment(prefix, report_name, args.github_api_token,
-                          args.github_repository,	pull_number, results)
+                          args.github_repository, pull_number, results, base_sha)
 
       # If running over a top level directory, ensure git sees no output
       cleanDir(aOutput)
