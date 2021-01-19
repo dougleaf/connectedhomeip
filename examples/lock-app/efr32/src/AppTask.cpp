@@ -41,7 +41,6 @@
 #include <platform/EFR32/ThreadStackManagerImpl.h>
 #include <platform/OpenThread/OpenThreadUtils.h>
 #include <platform/ThreadStackManager.h>
-#include <platform/internal/DeviceNetworkInfo.h>
 #endif
 
 #define FACTORY_RESET_TRIGGER_TIMEOUT 3000
@@ -388,7 +387,7 @@ void AppTask::FunctionHandler(AppEvent * aEvent)
             {
                 EFR32_LOG("Device is commissioned to a Thread network.");
             }
-#elif
+#else
             EFR32_LOG("Thread is not defined.");
 #endif
         }

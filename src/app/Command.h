@@ -37,6 +37,7 @@
 #include <support/DLLUtil.h>
 #include <support/logging/CHIPLogging.h>
 #include <system/SystemPacketBuffer.h>
+#include <system/TLVPacketBufferBackingStore.h>
 
 namespace chip {
 namespace app {
@@ -128,7 +129,7 @@ public:
 
 protected:
     void MoveToState(const CommandState aTargetState);
-    CHIP_ERROR ProcessCommandMessage(System::PacketBufferHandle payload, CommandRoleId aCommandRoleId);
+    CHIP_ERROR ProcessCommandMessage(System::PacketBufferHandle && payload, CommandRoleId aCommandRoleId);
     void ClearState();
     const char * GetStateStr() const;
 
@@ -142,8 +143,8 @@ private:
     CommandState mState;
 
     chip::System::PacketBufferHandle mCommandDataBuf;
-    chip::TLV::TLVWriter mCommandMessageWriter;
-    chip::TLV::TLVWriter mCommandDataWriter;
+    chip::System::PacketBufferTLVWriter mCommandMessageWriter;
+    chip::System::PacketBufferTLVWriter mCommandDataWriter;
 };
 } // namespace app
 } // namespace chip

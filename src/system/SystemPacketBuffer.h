@@ -1,6 +1,6 @@
 /*
  *
- *    Copyright (c) 2020 Project CHIP Authors
+ *    Copyright (c) 2020-2021 Project CHIP Authors
  *    Copyright (c) 2016-2017 Nest Labs, Inc.
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
@@ -197,7 +197,7 @@ public:
      *
      *  @param[in] aPacket - the packet buffer to be added to the end of the current chain.
      */
-    void AddToEnd(PacketBufferHandle aPacket);
+    void AddToEnd(PacketBufferHandle && aPacket);
 
     /**
      * Move data from subsequent buffers in the chain into the current buffer until it is full.
@@ -254,7 +254,7 @@ public:
     /**
      * Return the last buffer in a buffer chain.
      *
-     *  @return a handle to the next buffer in the buffer chain.
+     *  @return a handle to the last buffer in the buffer chain.
      */
     CHECK_RETURN_VALUE PacketBufferHandle Last();
 
@@ -308,9 +308,6 @@ public:
      */
     static PacketBufferHandle New();
 
-    // DO NOT USE. This is present only for existing TLV code that has not yet been converted, and will be removed soon.
-    PacketBuffer * Next_ForNow() const { return ChainedBuffer(); }
-
     // DO NOT USE. Will be made private after #4094 merges.
     void AddRef();
 
@@ -331,7 +328,6 @@ private:
     PacketBuffer * ChainedBuffer() const { return static_cast<PacketBuffer *>(this->next); }
     PacketBuffer * Consume(uint16_t aConsumeLength);
     void Clear();
-    void AddToEnd_ForNow(PacketBuffer * aPacket);
 
     friend class PacketBufferHandle;
     friend class ::PacketBufferTest;
@@ -583,7 +579,7 @@ public:
      *
      *  @note This differs from `FreeHead()` in that it does not touch any content in the currently referenced packet buffer;
      *      it only changes which buffer this handle owns. (Note that this could result in the previous buffer being freed,
-     *      if there is no other.) `Advance()` is designed to be used with an addition handle to traverse a buffer chain,
+     *      if there is no other owner.) `Advance()` is designed to be used with an additional handle to traverse a buffer chain,
      *      whereas `FreeHead()` modifies a chain.
      */
     void Advance() { *this = Hold(mBuffer->ChainedBuffer()); }
@@ -598,11 +594,6 @@ public:
      */
     struct pbuf * GetLwIPpbuf() { return static_cast<struct pbuf *>(mBuffer); }
 #endif // CHIP_SYSTEM_CONFIG_USE_LWIP
-
-    // DO NOT USE. This is intended to be used only to call existing TLV::Init() functions that have not yet been converted
-    // to take a PacketBufferHandle, and will be removed soon.
-    // The caller has access but no ownership.
-    PacketBuffer * Get_ForNow() const { return mBuffer; }
 
     /**
      * Creates a copy of the data in this packet.
@@ -630,6 +621,8 @@ private:
     }
 
     PacketBuffer * Get() const { return mBuffer; }
+
+    bool operator==(const PacketBufferHandle & aOther) { return mBuffer == aOther.mBuffer; }
 
     PacketBuffer * mBuffer;
 
